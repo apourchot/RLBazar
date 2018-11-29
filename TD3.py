@@ -259,9 +259,7 @@ class NTD3(object):
         Load model from folder
         """
         self.actor.load_model(directory, "actor")
-
-
-self.critic.load_model(directory, "critic")
+        self.critic.load_model(directory, "critic")
 
 
 class STD3(object):

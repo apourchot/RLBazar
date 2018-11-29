@@ -15,7 +15,7 @@ from utils import evaluate, get_output_folder, prLightPurple, prRed
 from memory import Memory
 from args import parser
 
-from TD3 import TD3, NTD3
+from TD3 import TD3, NTD3, STD3
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, n_steps=args.n_steps)
 
     # Algorithm
-    drla = NTD3(state_dim, action_dim, max_action, args)
+    drla = STD3(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)

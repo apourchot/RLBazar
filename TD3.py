@@ -380,7 +380,7 @@ class STD3(object):
                     actor_loss = -self.critic(states, n_actions)[0].mean()
                     actor_loss.backward()
 
-                    grads = self.actor.get_grads() * np.exp(- noise ** 2 / (2 * self.policy_noise ** 2)
+                    grads += self.actor.get_grads() * np.exp(- noise ** 2 / (2 * self.policy_noise ** 2)
                                                             ) / np.sqrt(2 * np.pi) / self.policy_noise
 
                 self.actor_opt.zero_grad()

@@ -75,16 +75,17 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
                 
                 d = min(n_steps, steps - i)
                 
-                state = states[i]
-                action = actions[i]
-                n_state = states[i + d]
+                if d == n_steps:
+                    state = states[i]
+                    action = actions[i]
+                    n_state = states[i + d]
 
-                stop = is_done if i == steps - 1 else 0
-                done = True if i == steps - 1 else False
-                reward = np.zeros(n_steps)
-                reward[:d] = rewards[i:i + d]
+                    stop = is_done if i == steps - 1 else 0
+                    done = True if i == steps - 1 else False
+                    reward = np.zeros(n_steps)
+                    reward[:d] = rewards[i:i + d]
 
-                memory.add((state, n_state, action, reward, d, done, stop))
+                    memory.add((state, n_state, action, reward, d, done, stop))
 
         scores.append(score)
         total_steps += steps

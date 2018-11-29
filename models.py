@@ -38,6 +38,16 @@ class RLNN(nn.Module):
                     params[cpt:cpt + tmp]).view(param.size()))
             cpt += tmp
 
+    def multiply(self, x):
+        """
+        Multiply params by x
+        """
+        cpt = 0
+        for param in self.parameters():
+            tmp = np.product(param.size())
+            param = param * FloatTensor(x[cpt:cpt+tmp]).view(param.size())
+            cpt += tmp
+
     def get_params(self):
         """
         Returns parameters of the actor
@@ -51,7 +61,7 @@ class RLNN(nn.Module):
         """
         return deepcopy(np.hstack([to_numpy(v.grad).flatten() for v in self.parameters()]))
 
-    def set_grads(self, paramters):
+    def set_grads(self, params):
         """
         Sets the current gradient
         """

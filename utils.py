@@ -4,7 +4,7 @@ import numpy as np
 
 from copy import deepcopy
 
-USE_CUDA = torch.cuda.is_available()
+USE_CUDA = False # torch.cuda.is_available()
 if USE_CUDA:
     FloatTensor = torch.cuda.FloatTensor
 else:

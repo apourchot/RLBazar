@@ -15,9 +15,9 @@ from utils import evaluate, get_output_folder, prLightPurple, prRed
 from memory import Memory
 from args import parser
 
-from TD3 import TD3, NTD3, STD3
+from TD3 import TD3, NTD3, STD3, POPTD3, D2TD3
 
-USE_CUDA = torch.cuda.is_available()
+USE_CUDA = False # torch.cuda.is_available()
 if USE_CUDA:
     FloatTensor = torch.cuda.FloatTensor
 else:
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, n_steps=args.n_steps)
 
     # Algorithm
-    drla = STD3(state_dim, action_dim, max_action, args)
+    drla = D2TD3(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         while actor_steps < K:
 
             fitness, steps = evaluate(
-                drla.actor, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps)
+                drla.mu, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps)
             drla.train(memory, steps)
 
             actor_steps += steps
@@ -68,7 +68,9 @@ if __name__ == "__main__":
                 "Iteration {}; Noisy Actor fitness:{}".format(ite, fitness))
 
         fitness, steps = evaluate(
-            drla.actor, env, memory=None, noise=None, n_episodes=10)
+            drla.mu, env, memory=None, noise=None, n_episodes=10)
+        print(drla.mu)
+        print(drla.log_sigma)
         print("---------------------------------")
         prRed("Total steps: {}; Actor fitness:{} \n".format(
             total_steps, fitness))

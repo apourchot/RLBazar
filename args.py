@@ -20,6 +20,10 @@ parser.add_argument('--noise_clip', default=0.5, type=float)
 parser.add_argument('--policy_freq', default=2, type=int)
 parser.add_argument('--n_steps', default=1, type=int)
 
+# Population parameters
+parser.add_argument('--pop_size', default=5, type=int)
+parser.add_argument('--sigma_init', default=0.1, type=float)
+
 # Gaussian noise parameters
 parser.add_argument('--gauss_sigma', default=0.1, type=float)
 

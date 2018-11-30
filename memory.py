@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 
-USE_CUDA = torch.cuda.is_available()
+USE_CUDA = False # torch.cuda.is_available()
 if USE_CUDA:
     FloatTensor = torch.cuda.FloatTensor
 else:
@@ -54,7 +54,7 @@ class Memory():
 
     def add(self, datum):
 
-        state, n_state, action, reward, step, done, stop = datum
+        state, n_state, action, reward, done, stop, step = datum
 
         self.dones[self.pos] = FloatTensor([done])
         self.stops[self.pos] = FloatTensor([stop])
@@ -82,3 +82,4 @@ class Memory():
                 self.steps[batch_inds],
                 self.dones[batch_inds],
                 self.stops[batch_inds])
+

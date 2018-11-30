@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 from utils import to_numpy
 
-USE_CUDA = torch.cuda.is_available()
+USE_CUDA = False # torch.cuda.is_available()
 if USE_CUDA:
     FloatTensor = torch.cuda.FloatTensor
 else:
@@ -36,6 +36,16 @@ class RLNN(nn.Module):
             else:
                 param.data.copy_(torch.from_numpy(
                     params[cpt:cpt + tmp]).view(param.size()))
+            cpt += tmp
+
+    def add(self, x):
+        """
+        Add x to params
+        """
+        cpt = 0
+        for param in self.parameters():
+            tmp = np.product(param.size())
+            param = param + x[cpt:cpt+tmp].view(param.size())
             cpt += tmp
 
     def multiply(self, x):

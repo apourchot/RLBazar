@@ -4,7 +4,7 @@ import numpy as np
 
 from copy import deepcopy
 
-USE_CUDA = False # torch.cuda.is_available()
+USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
     FloatTensor = torch.cuda.FloatTensor
 else:
@@ -20,7 +20,7 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
     if not random:
         def policy(state):
             state = FloatTensor(state.reshape(-1))
-            action = actor(state).cpu().data.numpy().flatten()
+            action = actor.action(state)
 
             if noise is not None:
                 action += noise.sample()
@@ -69,23 +69,23 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
             if done:
                 env.reset()
 
+        # store everything into memory if needed
         if memory is not None:
 
             for i in range(steps):
                 
                 d = min(n_steps, steps - i)
-                
-                if d == n_steps:
-                    state = states[i]
-                    action = actions[i]
-                    n_state = states[i + d]
 
-                    stop = is_done if i == steps - 1 else 0
-                    done = True if i == steps - 1 else False
-                    reward = np.zeros(n_steps)
-                    reward[:d] = rewards[i:i + d]
+                state = states[i]
+                action = actions[i]
+                n_state = states[i+1]
 
-                    memory.add((state, n_state, action, reward, d, done, stop))
+                reward = np.zeros(n_steps)
+                reward[:d] = rewards[i:i + d]
+                stop = is_done if i == steps - 1 else 0
+                done = True if i == steps - 1 else False
+
+                memory.add((state, action, n_state, reward, d, done, stop))
 
         scores.append(score)
         total_steps += steps

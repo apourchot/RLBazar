@@ -5,10 +5,10 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import utils
 
-from models import Actor, CriticTD3 as Critic, ValueTD3 as Value
+from drl.models import Actor, CriticTD3 as Critic, ValueTD3 as Value
 
 
-USE_CUDA = False  # torch.cuda.is_available()
+USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
     FloatTensor = torch.cuda.FloatTensor
 else:
@@ -62,7 +62,7 @@ class TD3(object):
         """
         Returns action given state
         """
-        state = torch.FloatTensor(state.reshape(1, -1))
+        state = FloatTensor(state.reshape(1, -1))
         return self.actor(state).cpu().data.numpy().flatten()
 
     def train(self, memory, n_iter):
@@ -73,7 +73,7 @@ class TD3(object):
         for it in range(n_iter):
 
             # Sample replay buffer
-            states, n_states, actions, rewards, dones = memory.sample(
+            states, actions, n_states, rewards, steps, dones, stops = memory.sample(
                 self.batch_size)
             rewards = self.reward_scale * rewards
 
@@ -87,7 +87,7 @@ class TD3(object):
             with torch.no_grad():
                 target_Q1, target_Q2 = self.critic_t(n_states, n_actions)
                 target_Q = torch.min(target_Q1, target_Q2)
-                target_Q = rewards + (1 - dones) * self.discount * target_Q
+                target_Q = rewards + (1 - stops) * self.discount * target_Q
 
             # Get current Q estimates
             current_Q1, current_Q2 = self.critic(states, actions)
@@ -186,7 +186,7 @@ class NTD3(object):
         """
         Returns action given state
         """
-        state = torch.FloatTensor(state.reshape(1, -1))
+        state = FloatTensor(state.reshape(1, -1))
         return self.actor(state).cpu().data.numpy().flatten()
 
     def train(self, memory, n_iter):
@@ -197,7 +197,7 @@ class NTD3(object):
         for it in range(n_iter):
 
             # Sample replay buffer
-            states, n_states, actions, rewards, steps, dones, stops = memory.sample(
+            states, actions, n_states, rewards, steps, dones, stops = memory.sample(
                 self.batch_size)
             rewards = self.reward_scale * rewards * self.weights
             rewards = rewards.sum(dim=1, keepdim=True)
@@ -213,7 +213,7 @@ class NTD3(object):
                 target_Q1, target_Q2 = self.critic_t(n_states, n_actions)
                 target_Q = torch.min(target_Q1, target_Q2)
                 target_Q = target_Q * self.discount ** (steps + 1)
-                target_Q = rewards.sum + (1 - stops) * target_Q
+                target_Q = rewards + (1 - stops) * target_Q
 
             # Get current Q estimates
             current_Q1, current_Q2 = self.critic(states, actions)
@@ -312,7 +312,7 @@ class STD3(object):
         """
         Returns action given state
         """
-        state = torch.FloatTensor(state.reshape(1, -1))
+        state = FloatTensor(state.reshape(1, -1))
         return self.actor(state).cpu().data.numpy().flatten()
 
     def train(self, memory, n_iter):
@@ -323,7 +323,7 @@ class STD3(object):
         for it in range(n_iter):
 
             # Sample replay buffer
-            states, n_states, actions, rewards, steps, dones, stops = memory.sample(
+            states, actions, n_states, rewards, steps, dones, stops = memory.sample(
                 self.batch_size)
             rewards = self.reward_scale * rewards * self.weights
             rewards = rewards.sum(dim=1, keepdim=True)
@@ -483,7 +483,7 @@ class POPTD3(object):
         for it in range(n_iter):
 
             # Sample replay buffer
-            states, n_states, actions, rewards, steps, dones, stops = memory.sample(
+            states, actions, n_states, rewards, steps, dones, stops = memory.sample(
                 self.batch_size)
             rewards = self.reward_scale * rewards * self.weights
             rewards = rewards.sum(dim=1, keepdim=True)
@@ -580,10 +580,10 @@ class D2TD3(object):
         self.mu_t.load_state_dict(self.mu.state_dict())
 
         # Sigma stuff
-        self.log_sigma = torch.nn.Parameter(
-            np.log(args.sigma_init) * torch.ones(self.mu.get_size()))
-        self.log_sigma_t = torch.nn.Parameter(
-            np.log(args.sigma_init) * torch.ones(self.mu.get_size()))
+        self.log_sigma = FloatTensor(
+            np.log(args.sigma_init) * np.ones(self.mu.get_size()))
+        self.log_sigma_t = FloatTensor(
+            np.log(args.sigma_init) * np.ones(self.mu.get_size()))
 
         # Optimizer
         self.opt = torch.optim.Adam(self.mu.parameters(), lr=args.actor_lr)
@@ -632,20 +632,20 @@ class D2TD3(object):
         for it in range(n_iter):
 
             # Sample replay buffer
-            states, n_states, actions, rewards, steps, dones, stops = memory.sample(
+            states, actions, n_states, rewards, steps, dones, stops = memory.sample(
                 self.batch_size)
             rewards = self.reward_scale * rewards * self.weights
             rewards = rewards.sum(dim=1, keepdim=True)
 
             # Select policy according to noise
-            mu_t = self.mu_t.get_params()
-            log_sigma_t = self.log_sigma_t.data.cpu().numpy()
-            noise = np.random.normal(size=(self.n_actor_params))
-            pi_t = mu_t + noise * np.exp(log_sigma_t)
+            # mu_t = self.mu_t.get_params()
+            # log_sigma_t = self.log_sigma_t.data.cpu().numpy()
+            # noise = np.random.randn(self.n_actor_params)
+            # pi_t = mu_t + noise * np.exp(log_sigma_t)
 
-            self.mu_t.set_params(pi_t)
+            # self.mu_t.set_params(pi_t)
             n_actions = self.mu_t(n_states)
-            self.mu.set_params(mu_t)
+            # self.mu.set_params(mu_t)
 
             # Q target = reward + discount * min_i(Qi(next_state, pi(next_state)))
             with torch.no_grad():
@@ -669,15 +669,26 @@ class D2TD3(object):
             # Delayed policy updates
             if it % self.policy_freq == 0:
 
-                # Select policy
-                noise = torch.distributions.Normal(torch.zeros(self.n_actor_params), torch.ones(
-                    self.n_actor_params)).sample() * torch.exp(self.log_sigma)
-                self.mu.add(noise)
-
+                # Creating random policy
+                mu = self.mu.get_params()
+                log_sigma = self.log_sigma.data.cpu().numpy()
+                noise = np.random.randn(self.n_actor_params)
+                pi = mu + noise * np.exp(log_sigma)
+                
+                # Computing loss
+                self.mu.set_params(pi)
                 pi_loss = -self.critic(states, self.mu(states))[0].mean()
 
-                self.opt.zero_grad()
+                # Computing gradient wrt noisy policy
                 pi_loss.backward()
+                pi_grad = self.mu.get_grads()
+                self.mu.set_params(mu)
+
+                # Setting gradients
+                self.opt.zero_grad()
+                self.mu.set_params(mu)
+                self.mu.set_grads(pi_grad)
+                self.log_sigma.grad = FloatTensor(pi_grad * noise * np.exp(log_sigma))
                 self.opt.step()
 
                 # Update the frozen mu

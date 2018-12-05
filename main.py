@@ -17,6 +17,7 @@ from utils.logger import Logger
 from utils.args import parser
 
 from drl.TD3 import TD3, NTD3, STD3, POPTD3, D2TD3
+from drl.Virel import Virel
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -43,10 +44,10 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, n_steps=args.n_steps)
 
     # Algorithm
-    drla = NTD3(state_dim, action_dim, max_action, args)
+    drla = Virel(state_dim, action_dim, max_action, args)
 
     # Action noise
-    a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
+    a_noise = None # GaussianNoise(action_dim, sigma=args.gauss_sigma)
 
     # Logger
     fields = ["eval_score", "total_steps"]

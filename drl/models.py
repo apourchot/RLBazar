@@ -117,6 +117,45 @@ class RLNN(nn.Module):
         )
 
 
+class GaussianActor(RLNN):
+
+    def __init__(self, state_dim, action_dim, max_action, args):
+        super(GaussianActor, self).__init__(state_dim, action_dim, max_action)
+
+        # Mean parameters
+        self.l1 = nn.Linear(state_dim, 400)
+        self.l2 = nn.Linear(400, 300)
+        self.l3 = nn.Linear(300, action_dim)
+
+        # Sigma parameters
+        self.l4 = nn.Linear(state_dim, 400)
+        self.l5 = nn.Linear(400, 300)
+        self.l6 = nn.Linear(300, action_dim)
+
+        # Misc
+        self.max_action = max_action
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.sigma_max = 0.1
+
+    def forward(self, x, rand=True):
+
+        mu = torch.relu(self.l1(x))
+        mu = torch.relu(self.l2(mu))
+        mu = self.max_action * torch.tanh(self.l3(mu))
+
+        s = torch.relu(self.l4(x))
+        s = torch.relu(self.l5(s))
+        s = self.sigma_max * torch.tanh(self.l6(s))
+
+        if rand:
+            noise = FloatTensor(self.action_dim).normal_()
+        else:
+            noise = FloatTensor(self.action_dim).fill_(0)
+
+        return mu + noise * s ** 2, mu, s
+
+
 class Actor(RLNN):
 
     def __init__(self, state_dim, action_dim, max_action, args):

@@ -6,6 +6,7 @@ class OrnsteinUhlenbeckProcess:
     Ornstein-Uhnlenbeck process
     Based on http://math.stackexchange.com/questions/1287634/implementing-ornstein-uhlenbeck-in-matlab
     """
+
     def __init__(self, action_dim, mu=0, theta=0.15, sigma=0.2):
         self.action_dim = action_dim
         self.mu = mu

@@ -339,7 +339,7 @@ class STD3(object):
                 target_Q1, target_Q2 = self.critic_t(n_states, n_actions)
                 target_Q = torch.min(target_Q1, target_Q2)
                 target_Q = target_Q * self.discount ** (steps + 1)
-                target_Q = rewards.sum + (1 - stops) * target_Q 
+                target_Q = rewards.sum + (1 - stops) * target_Q
 
             # Get current Q estimates
             current_Q1, current_Q2 = self.critic(states, actions)
@@ -381,8 +381,9 @@ class STD3(object):
                     actor_loss = -self.critic(states, n_actions)[0].mean()
                     actor_loss.backward()
 
-                    grads += self.actor.get_grads() # * np.exp(- noise ** 2 / (2 * self.policy_noise ** 2)
-                                                    #        ) / np.sqrt(2 * np.pi) / self.policy_noise
+                    # * np.exp(- noise ** 2 / (2 * self.policy_noise ** 2)
+                    grads += self.actor.get_grads()
+                    #        ) / np.sqrt(2 * np.pi) / self.policy_noise
 
                 self.actor_opt.zero_grad()
                 self.actor.set_params(actor_params)
@@ -432,13 +433,14 @@ class POPTD3(object):
         self.mu_t.load_state_dict(self.mu.state_dict())
 
         # Sigma stuff
-        self.sigma = torch.nn.Parameter(args.sigma_init * torch.ones(self.mu.get_size()))
+        self.sigma = torch.nn.Parameter(
+            args.sigma_init * torch.ones(self.mu.get_size()))
         self.sigma_t = torch.nn.Parameter(
             args.sigma_init * torch.ones(self.mu.get_size()))
 
         # Optimizer
         self.opt = torch.optim.Adam(self.mu.parameters(), lr=args.actor_lr)
-        self.opt.add_param_group({"params":self.sigma})
+        self.opt.add_param_group({"params": self.sigma})
 
         # Critic stuff
         self.critic = Critic(state_dim, action_dim, max_action, args)
@@ -517,7 +519,7 @@ class POPTD3(object):
                 mu = self.mu.get_params()
                 sigma = self.sigma.data.cpu().numpy()
                 noise = np.random.normal(size=(self.n_actor_params))
-                pi = mu + noise * sigma ** 2 
+                pi = mu + noise * sigma ** 2
 
                 self.opt.zero_grad()
                 self.mu.set_params(pi)
@@ -539,13 +541,14 @@ class POPTD3(object):
                 self.sigma.grad.data = FloatTensor(grad_sigma)
                 self.opt.step()
 
-                # Update the frozen mu 
+                # Update the frozen mu
                 for param, target_param in zip(self.mu.parameters(), self.mu_t.parameters()):
                     target_param.data.copy_(
                         self.tau * param.data + (1 - self.tau) * target_param.data)
 
                 # Update the frozen sigma
-                self.sigma_t = self.tau * self.sigma + (1 - self.tau) * self.sigma_t
+                self.sigma_t = self.tau * self.sigma + \
+                    (1 - self.tau) * self.sigma_t
 
             # Update the frozen critic models
             for param, target_param in zip(self.critic.parameters(), self.critic_t.parameters()):
@@ -674,7 +677,7 @@ class D2TD3(object):
                 log_sigma = self.log_sigma.data.cpu().numpy()
                 noise = np.random.randn(self.n_actor_params)
                 pi = mu + noise * np.exp(log_sigma)
-                
+
                 # Computing loss
                 self.mu.set_params(pi)
                 pi_loss = -self.critic(states, self.mu(states))[0].mean()
@@ -688,7 +691,8 @@ class D2TD3(object):
                 self.opt.zero_grad()
                 self.mu.set_params(mu)
                 self.mu.set_grads(pi_grad)
-                self.log_sigma.grad = FloatTensor(pi_grad * noise * np.exp(log_sigma))
+                self.log_sigma.grad = FloatTensor(
+                    pi_grad * noise * np.exp(log_sigma))
                 self.opt.step()
 
                 # Update the frozen mu

@@ -84,7 +84,7 @@ class Memory():
         Sample a mini-batch from memory
         """
 
-        upper_bound = self.memory_size if self.full else self.pos
+        upper_bound = self.memory_size - self.n_steps if self.full else self.pos - self.n_steps
         batch_inds = LongTensor(np.random.randint(0, upper_bound, size=batch_size))
 
         states = self.states[batch_inds]

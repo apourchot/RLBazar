@@ -118,6 +118,9 @@ class RLNN(nn.Module):
 
 
 class GaussianActor(RLNN):
+    """
+    Gaussian Policy
+    """
 
     def __init__(self, state_dim, action_dim, max_action, args):
         super(GaussianActor, self).__init__(state_dim, action_dim, max_action)
@@ -136,16 +139,16 @@ class GaussianActor(RLNN):
         self.max_action = max_action
         self.state_dim = state_dim
         self.action_dim = action_dim
-        self.sigma_max = 0.1
+        self.sigma_max = 0.3
 
     def forward(self, x, rand=True):
 
-        mu = torch.relu(self.l1(x))
-        mu = torch.relu(self.l2(mu))
+        mu = torch.tanh(self.l1(x))
+        mu = torch.tanh(self.l2(mu))
         mu = self.max_action * torch.tanh(self.l3(mu))
 
-        s = torch.relu(self.l4(x))
-        s = torch.relu(self.l5(s))
+        s = torch.tanh(self.l4(x))
+        s = torch.tanh(self.l5(s))
         s = self.sigma_max * torch.tanh(self.l6(s))
 
         if rand:

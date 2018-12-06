@@ -17,7 +17,7 @@ from utils.logger import Logger
 from utils.args import parser
 
 from drl.TD3 import TD3, NTD3, STD3, POPTD3, D2TD3
-from drl.Virel import Virel
+from drl.Virel import Virel, VirelKL
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:

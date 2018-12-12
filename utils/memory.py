@@ -10,6 +10,7 @@ else:
     FloatTensor = torch.FloatTensor
     LongTensor = torch.LongTensor
 
+
 class Memory():
     """
     Simple Memory class

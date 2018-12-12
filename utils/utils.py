@@ -19,7 +19,6 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
 
     if not random:
         def policy(state):
-            state = FloatTensor(state.reshape(-1))
             action = actor.action(state)
 
             if noise is not None:
@@ -39,6 +38,8 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
         states = []
         actions = []
         rewards = []
+        dones = []
+        stops = []
 
         score = 0
         steps = 0
@@ -60,6 +61,8 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
             states.append(obs)
             actions.append(action)
             rewards.append(reward)
+            dones.append(done)
+            stops.append(is_done)
 
             # render if needed
             if render:
@@ -72,20 +75,15 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
         # store everything into memory if needed
         if memory is not None:
 
-            for i in range(steps):
-                
-                d = min(n_steps, steps - i)
+            for i in range(steps - n_steps + 1):
 
-                state = states[i]
-                action = actions[i]
-                n_state = states[i+1]
+                m_states = states[i:i+n_steps+1]
+                m_actions = actions[i:i+n_steps]
+                m_rewards = rewards[i:i+n_steps]
+                m_dones = dones[i:i+n_steps]
+                m_stops = stops[i:i+n_steps]
 
-                reward = np.zeros(n_steps)
-                reward[:d] = rewards[i:i + d]
-                stop = is_done if i == steps - 1 else 0
-                done = True if i == steps - 1 else False
-
-                memory.add((state, action, n_state, reward, d, done, stop))
+                memory.add((m_states, m_actions, m_rewards, m_dones, m_stops))
 
         scores.append(score)
         total_steps += steps

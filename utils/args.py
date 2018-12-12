@@ -40,7 +40,6 @@ parser.add_argument('--ou_mu', default=0.0, type=float)
 parser.add_argument('--n_episodes', default=1, type=int)
 parser.add_argument('--max_steps', default=1000000, type=int)
 parser.add_argument('--mem_size', default=1000000, type=int)
-parser.add_argument('--n_noisy', default=0, type=int)
 
 # Testing parameters
 parser.add_argument('--filename', default="", type=str)

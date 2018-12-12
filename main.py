@@ -1,23 +1,15 @@
-from copy import deepcopy
-
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pandas as pd
-
-import gym
 import gym.spaces
-import numpy as np
-from tqdm import tqdm
 
-from drl.random_process import GaussianNoise
 from utils.utils import evaluate, get_output_folder, prLightPurple, prRed
 from utils.memory import Memory
 from utils.logger import Logger
 from utils.args import parser
 
-from drl.TD3 import TD3, NTD3, STD3, POPTD3, D2TD3
-from drl.Virel import Virel, VirelKL
+from drl.random_process import GaussianNoise
+from drl.td3 import TD3
+from drl.virel import Virel
+from drl.mpo import MPO
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -44,10 +36,10 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, n_steps=args.n_steps)
 
     # Algorithm
-    drla = Virel(state_dim, action_dim, max_action, args)
+    drla = TD3(state_dim, action_dim, max_action, args)
 
     # Action noise
-    a_noise = None # GaussianNoise(action_dim, sigma=args.gauss_sigma)
+    a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
 
     # Logger
     fields = ["eval_score", "total_steps"]
@@ -64,7 +56,7 @@ if __name__ == "__main__":
         while actor_steps < K:
 
             fitness, steps = evaluate(
-                drla, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps)
+                drla, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps, render=args.render)
             drla.train(memory, steps)
 
             actor_steps += steps

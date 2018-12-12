@@ -28,22 +28,22 @@ class Memory():
         self.memory_size = memory_size
 
         if USE_CUDA:
-            self.states = torch.zeros(self.memory_size, self.state_dim).cuda()
-            self.actions = torch.zeros(self.memory_size, self.action_dim).cuda()
-            self.n_states = torch.zeros(self.memory_size, self.state_dim).cuda()
+            self.states = torch.zeros(self.memory_size, n_steps + 1, self.state_dim).cuda()
+            self.actions = torch.zeros(self.memory_size, n_steps, self.action_dim).cuda()
+            self.n_states = torch.zeros(self.memory_size, n_steps, self.state_dim).cuda()
             self.rewards = torch.zeros(self.memory_size, n_steps).cuda()
-            self.steps = torch.zeros(self.memory_size, 1).cuda()
-            self.dones = torch.zeros(self.memory_size, 1).cuda()
-            self.stops = torch.zeros(self.memory_size, 1).cuda()
+            self.steps = torch.zeros(self.memory_size, n_steps).cuda()
+            self.dones = torch.zeros(self.memory_size, n_steps).cuda()
+            self.stops = torch.zeros(self.memory_size, n_steps).cuda()
 
         else:
-            self.states = torch.zeros(self.memory_size, self.state_dim)
-            self.actions = torch.zeros(self.memory_size, self.action_dim)
-            self.n_states = torch.zeros(self.memory_size, self.state_dim)
+            self.states = torch.zeros(self.memory_size, n_steps, self.state_dim)
+            self.actions = torch.zeros(self.memory_size, n_steps, self.action_dim)
+            self.n_states = torch.zeros(self.memory_size, n_steps, self.state_dim)
             self.rewards = torch.zeros(self.memory_size, n_steps)
-            self.steps = torch.zeros(self.memory_size, 1)
-            self.dones = torch.zeros(self.memory_size, 1)
-            self.stops = torch.zeros(self.memory_size, 1)
+            self.steps = torch.zeros(self.memory_size, n_steps)
+            self.dones = torch.zeros(self.memory_size, n_steps)
+            self.stops = torch.zeros(self.memory_size, n_steps)
 
     def size(self):
         """
@@ -64,15 +64,13 @@ class Memory():
         Adds the given sample into memory
         """
 
-        state, action, n_state, reward, step, done, stop = datum
+        states, actions, rewards, dones, stops = datum
 
-        self.states[self.pos] = FloatTensor(state)
-        self.actions[self.pos] = FloatTensor(action)
-        self.n_states[self.pos] = FloatTensor(n_state)
-        self.rewards[self.pos] = FloatTensor(reward)
-        self.steps[self.pos] = LongTensor([step])
-        self.dones[self.pos] = FloatTensor([done])
-        self.stops[self.pos] = FloatTensor([stop])
+        self.states[self.pos] = FloatTensor(states)
+        self.actions[self.pos] = FloatTensor(actions)
+        self.rewards[self.pos] = FloatTensor(rewards)
+        self.dones[self.pos] = FloatTensor(dones)
+        self.stops[self.pos] = FloatTensor(stops)
 
         self.pos += 1
         if self.pos == self.memory_size:
@@ -86,18 +84,17 @@ class Memory():
 
         upper_bound = self.memory_size - self.n_steps if self.full else self.pos - self.n_steps
         batch_inds = LongTensor(np.random.randint(0, upper_bound, size=batch_size))
-
-        states = self.states[batch_inds]
-        actions = self.actions[batch_inds]
         
         tmp = FloatTensor(batch_size, 1).uniform_()
-        rand_steps = self.steps[batch_inds] * tmp 
-        rand_steps = torch.ceil(rand_steps).type(LongTensor).view(-1)
+        rand_steps = self.n_steps * tmp
+        rand_steps = torch.ceil(rand_steps).type(LongTensor).view(-1) - 1
 
+        states = self.states[batch_inds, 0]
+        n_states = self.states[batch_inds, rand_steps + 1]
+        actions = self.actions[batch_inds, 0]
         rewards = self.rewards[batch_inds]
-        n_states = self.states[batch_inds + rand_steps]
-        stops = self.stops[batch_inds + rand_steps]
-        dones = self.dones[batch_inds + rand_steps]
+        dones = self.dones[batch_inds, rand_steps].view(-1, 1)
+        stops = self.stops[batch_inds, rand_steps].view(-1, 1)
 
-        return (states, actions, n_states, rewards, rand_steps.type(FloatTensor).view(-1, 1), dones, stops)
+        return states, actions, n_states, rewards, rand_steps.type(FloatTensor).view(-1, 1), dones, stops
 

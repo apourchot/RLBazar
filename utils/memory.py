@@ -31,16 +31,14 @@ class Memory():
         if USE_CUDA:
             self.states = torch.zeros(self.memory_size, n_steps + 1, self.state_dim).cuda()
             self.actions = torch.zeros(self.memory_size, n_steps, self.action_dim).cuda()
-            self.n_states = torch.zeros(self.memory_size, n_steps, self.state_dim).cuda()
             self.rewards = torch.zeros(self.memory_size, n_steps).cuda()
             self.steps = torch.zeros(self.memory_size, n_steps).cuda()
             self.dones = torch.zeros(self.memory_size, n_steps).cuda()
             self.stops = torch.zeros(self.memory_size, n_steps).cuda()
 
         else:
-            self.states = torch.zeros(self.memory_size, n_steps, self.state_dim)
+            self.states = torch.zeros(self.memory_size, n_steps + 1, self.state_dim)
             self.actions = torch.zeros(self.memory_size, n_steps, self.action_dim)
-            self.n_states = torch.zeros(self.memory_size, n_steps, self.state_dim)
             self.rewards = torch.zeros(self.memory_size, n_steps)
             self.steps = torch.zeros(self.memory_size, n_steps)
             self.dones = torch.zeros(self.memory_size, n_steps)

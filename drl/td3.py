@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from drl.models import Actor, CriticTD3 as Critic
+from drl.models import Actor, NASActor, CriticTD3 as Critic
 
 
 USE_CUDA = torch.cuda.is_available()
@@ -121,6 +121,131 @@ class TD3(object):
             for param, target_param in zip(self.critic.parameters(), self.critic_t.parameters()):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
+
+    def save(self, directory):
+        """
+        Save the model in given folder
+        """
+        self.actor.save_model(directory, "actor")
+        self.critic.save_model(directory, "critic")
+
+    def load(self, directory):
+        """
+        Load model from folder
+        """
+        self.actor.load_model(directory, "actor")
+        self.critic.load_model(directory, "critic")
+
+
+class NASTD3(object):
+    """
+    Twin Delayed Deep Deterministic Policy Gradient Algorithm with n-step return
+    """
+
+    def __init__(self, state_dim, action_dim, max_action, args):
+
+        # Actor stuff
+        self.actor = NASActor(state_dim, action_dim, max_action, 400, 3, args)
+        self.actor_t = NASActor(state_dim, action_dim, max_action, 400, 3, args)
+        self.actor_t.load_state_dict(self.actor.state_dict())
+        self.actor_opt = torch.optim.Adam(
+            self.actor.parameters(), lr=args.actor_lr)
+
+        # Critic stuff
+        self.critic = Critic(state_dim, action_dim, max_action, args)
+        self.critic_t = Critic(state_dim, action_dim, max_action, args)
+        self.critic_t.load_state_dict(self.critic.state_dict())
+        self.critic_opt = torch.optim.Adam(
+            self.critic.parameters(), lr=args.critic_lr)
+
+        # Env stuff
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.max_action = max_action
+
+        # Hyperparams
+        self.tau = args.tau
+        self.n_steps = args.n_steps
+        self.discount = args.discount
+        self.batch_size = args.batch_size
+        self.noise_clip = args.noise_clip
+        self.policy_freq = args.policy_freq
+        self.policy_noise = args.policy_noise
+        self.reward_scale = args.reward_scale
+        self.weights = FloatTensor(
+            [self.discount ** i for i in range(self.n_steps)])
+
+        # cuda
+        if args.use_cuda:
+            self.actor.cuda()
+            self.actor_t.cuda()
+            self.critic.cuda()
+            self.critic_t.cuda()
+
+    def action(self, state):
+        """
+        Returns action given state
+        """
+        state = FloatTensor(state.reshape(1, -1))
+        return self.actor(state).cpu().data.numpy().flatten()
+
+    def train(self, memory, n_iter):
+        """
+        Trains the model for n_iter steps
+        """
+
+        for it in range(n_iter):
+
+            # Sample replay buffer
+            states, actions, n_states, rewards, steps, dones, stops = memory.sample(
+                self.batch_size)
+            rewards = self.reward_scale * rewards * self.weights
+            rewards = rewards.sum(dim=1, keepdim=True)
+
+            # Select action according to policy and add clipped noise
+            n_actions = self.actor_t(n_states)
+
+           # Q target = reward + discount * min_i(Qi(next_state, pi(next_state)))
+            with torch.no_grad():
+                target_q1, target_q2 = self.critic_t(n_states, n_actions)
+                target_q = torch.min(target_q1, target_q2)
+                target_q = rewards + (1 - stops) * target_q * self.discount ** (steps + 1)
+
+            # Get current Q estimates
+            current_q1, current_q2 = self.critic(states, actions)
+
+            # Compute critic loss
+            critic_loss = nn.MSELoss()(current_q1, target_q) + \
+                nn.MSELoss()(current_q2, target_q)
+
+            # Optimize the critic
+            self.critic_opt.zero_grad()
+            critic_loss.backward()
+            self.critic_opt.step()
+
+            # Delayed policy updates
+            if it % self.policy_freq == 0:
+
+                # Compute actor loss
+                actor_loss = -self.critic(states, self.actor(states))[0].mean()
+
+                # Optimize the actor
+                self.actor_opt.zero_grad()
+                actor_loss.backward()
+                self.actor_opt.step()
+
+                # Update the frozen actor models
+                for param, target_param in zip(self.actor.parameters(), self.actor_t.parameters()):
+                    target_param.data.copy_(
+                        self.tau * param.data + (1 - self.tau) * target_param.data)
+
+            # Update the frozen critic models
+            for param, target_param in zip(self.critic.parameters(), self.critic_t.parameters()):
+                target_param.data.copy_(
+                    self.tau * param.data + (1 - self.tau) * target_param.data)
+
+        self.actor.reduce_temp(0.999)
+        self.actor_t.reduce_temp(0.999)
 
     def save(self, directory):
         """

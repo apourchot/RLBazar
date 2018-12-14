@@ -121,7 +121,6 @@ def prLightGray(prt):
 def prBlack(prt):
     print("\033[98m{}\033[00m" .format(prt))
 
-
 def to_numpy(var):
     return var.cpu().data.numpy() if USE_CUDA else var.data.numpy()
 

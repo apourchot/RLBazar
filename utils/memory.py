@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import torch.multiprocessing as mp
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -81,7 +80,7 @@ class Memory():
         Sample a mini-batch from memory
         """
 
-        upper_bound = self.memory_size - self.n_steps if self.full else self.pos - self.n_steps
+        upper_bound = max(1, self.memory_size - self.n_steps if self.full else self.pos - self.n_steps)
         batch_inds = LongTensor(np.random.randint(0, upper_bound, size=batch_size))
         
         tmp = FloatTensor(batch_size, 1).uniform_()

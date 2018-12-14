@@ -7,7 +7,7 @@ from utils.logger import Logger
 from utils.args import parser
 
 from drl.random_process import GaussianNoise
-from drl.td3 import TD3
+from drl.td3 import TD3, NASTD3
 from drl.virel import Virel
 from drl.mpo import MPO
 
@@ -36,10 +36,10 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, n_steps=args.n_steps)
 
     # Algorithm
-    drla = TD3(state_dim, action_dim, max_action, args)
+    drla = NASTD3(state_dim, action_dim, max_action, args)
 
     # Action noise
-    a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
+    a_noise = None # GaussianNoise(action_dim, sigma=args.gauss_sigma)
 
     # Logger
     fields = ["eval_score", "total_steps"]
@@ -61,6 +61,9 @@ if __name__ == "__main__":
 
             actor_steps += steps
             total_steps += steps
+
+            print(torch.exp(drla.actor.log_alphas))
+            print(drla.actor.tau)
 
             prLightPurple(
                 "Iteration {}; Noisy Actor fitness:{}".format(ite, fitness))

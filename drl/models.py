@@ -117,6 +117,85 @@ class RLNN(nn.Module):
         )
 
 
+class NASActor(RLNN):
+
+    def __init__(self, input_dim, output_dim, max_output, hidden_size, n_cells, args):
+        super(NASActor, self).__init__(input_dim, output_dim, max_output)
+
+        # Misc
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.max_output = max_output
+
+        # hyper-parameters
+        self.hidden_size = hidden_size
+        self.n_cells = n_cells
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()]
+        self.n_ops = len(self.ops) + 1
+
+        # Layers
+        self.fc_list = nn.ModuleDict()
+        for i in range(self.n_cells - 1):
+            for j in range(self.n_cells):
+
+                input = self.hidden_size
+                output = self.hidden_size
+
+                if i == 0:
+                    input = self.input_dim
+
+                for o in range(self.n_ops - 1):
+                    self.fc_list["{}_{}_{}".format(i, j, o)] = nn.Sequential(nn.Linear(input, output), self.ops[o])
+
+        self.out = nn.Linear(self.hidden_size, self.output_dim)
+
+        # Sampling params
+        self.tau = 1
+        self.log_alphas = nn.Parameter(FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).fill_(np.log(1 / self.n_ops)))
+
+    def forward(self, x):
+
+        batch_size = x.shape[0]
+
+        # Sampling stuff
+        eps = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).uniform_()
+        eps = -torch.log(-torch.log(eps))
+        z = torch.exp((self.log_alphas + eps / self.tau))
+        z = z / torch.sum(z, dim=2, keepdim=True)
+
+        # Forward pass
+        inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
+        outputs = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops - 1, batch_size, self.hidden_size).fill_(0)
+
+        # Edges starting from first node
+        for j in range(1, self.n_cells):
+            for o in range(self.n_ops - 1):
+                outputs[0, j, o] = self.fc_list["{}_{}_{}".format(0, j, o)](x)
+
+        # Other edges
+        outputs_clone = outputs.clone()
+        for i in range(1, self.n_cells):
+            tmp = outputs_clone[:i, i].reshape(-1, batch_size, self.hidden_size)
+            tmp = tmp * z[:i, i, :-1].reshape(-1, 1, 1)
+            tmp_sum = torch.sum(tmp, dim=0)
+            inputs[i] = tmp_sum
+
+            for j in range(i + 1, self.n_cells):
+                for o in range(self.n_ops - 1):
+                    outputs[i, j, o] = self.fc_list["{}_{}_{}".format(i, j, o)](tmp_sum)
+
+        # Output edges
+        result = inputs[-1]
+        for i in range(self.n_cells - 1):
+            result = result + inputs[i] * torch.prod(z[i, (i + 1):, -1])
+        result = self.max_output * torch.tanh(self.out(result))
+
+        return result
+
+    def reduce_temp(self, rate):
+        self.tau = rate * self.tau + (1 - self.tau) * 1e-5
+
+
 class GaussianActor(RLNN):
     """
     Gaussian Policy

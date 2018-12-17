@@ -36,7 +36,7 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, args)
 
     # Algorithm
-    drla = TD3(state_dim, action_dim, max_action, args)
+    drla = NASTD3(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = None # GaussianNoise(action_dim, sigma=args.gauss_sigma)
@@ -62,8 +62,8 @@ if __name__ == "__main__":
             actor_steps += steps
             total_steps += steps
 
-            # print(torch.exp(drla.actor.log_alphas))
-            # print(drla.actor.tau)
+            print(torch.exp(drla.actor.log_alphas))
+            print(drla.actor.tau)
 
             prLightPurple(
                 "Iteration {}; Noisy Actor fitness:{}".format(ite, fitness))
@@ -76,8 +76,8 @@ if __name__ == "__main__":
             total_steps, fitness))
         drla.save(args.output)
 
-        if args.save_all_models and total_steps % 1000 == 0:
-            drla.actor.save_model(args.output, "actor_{}.pkl".format(total_steps))
-            drla.critic.save_model(args.output, "critic_{}.pkl".format(total_steps))
+        if args.save_all_models and total_steps % 100000 == 0:
+            drla.actor.save_model(args.output, "actor_{}".format(total_steps))
+            drla.critic.save_model(args.output, "critic_{}".format(total_steps))
             memory.save(args.output)
 

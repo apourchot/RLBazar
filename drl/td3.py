@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from drl.models import Actor, NASActor, CriticTD3 as Critic
+from drl.models import FoundActor as Actor, NASActor, CriticTD3 as Critic
 
 
 USE_CUDA = torch.cuda.is_available()
@@ -145,8 +145,8 @@ class NASTD3(object):
     def __init__(self, state_dim, action_dim, max_action, args):
 
         # Actor stuff
-        self.actor = NASActor(state_dim, action_dim, max_action, 400, 3, args)
-        self.actor_t = NASActor(state_dim, action_dim, max_action, 400, 3, args)
+        self.actor = NASActor(state_dim, action_dim, max_action, args)
+        self.actor_t = NASActor(state_dim, action_dim, max_action, args)
         self.actor_t.load_state_dict(self.actor.state_dict())
         self.actor_opt = torch.optim.Adam(
             self.actor.parameters(), lr=args.actor_lr)
@@ -244,8 +244,10 @@ class NASTD3(object):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        self.actor.reduce_temp(0.999)
-        self.actor_t.reduce_temp(0.999)
+        self.actor.normalize_alpha()
+        # self.actor.reduce_temp(0.999)
+        self.actor_t.normalize_alpha()
+        # self.actor_t.reduce_temp(0.999)
 
     def save(self, directory):
         """

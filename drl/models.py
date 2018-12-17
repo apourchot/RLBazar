@@ -119,7 +119,7 @@ class RLNN(nn.Module):
 
 class NASActor(RLNN):
 
-    def __init__(self, input_dim, output_dim, max_output, hidden_size, n_cells, args):
+    def __init__(self, input_dim, output_dim, max_output, args):
         super(NASActor, self).__init__(input_dim, output_dim, max_output)
 
         # Misc
@@ -128,8 +128,8 @@ class NASActor(RLNN):
         self.max_output = max_output
 
         # hyper-parameters
-        self.hidden_size = hidden_size
-        self.n_cells = n_cells
+        self.hidden_size = args.hidden_size
+        self.n_cells = args.n_cells
         self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()]
         self.n_ops = len(self.ops) + 1
 
@@ -151,7 +151,8 @@ class NASActor(RLNN):
 
         # Sampling params
         self.tau = 1
-        self.log_alphas = nn.Parameter(FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).fill_(np.log(1 / self.n_ops)))
+        self.log_alphas = nn.Parameter(FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).fill_(-np.log(self.n_ops)))
+        self.cpt = 1
 
     def forward(self, x):
 
@@ -160,8 +161,12 @@ class NASActor(RLNN):
         # Sampling stuff
         eps = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).uniform_()
         eps = -torch.log(-torch.log(eps))
-        z = torch.exp((self.log_alphas + eps / self.tau))
+        z = torch.exp((self.log_alphas + eps) / self.tau)
         z = z / torch.sum(z, dim=2, keepdim=True)
+
+        # if self.cpt % 1000 == 0:
+        #     print("Z", z)
+        self.cpt += 1
 
         # Forward pass
         inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
@@ -173,9 +178,8 @@ class NASActor(RLNN):
                 outputs[0, j, o] = self.fc_list["{}_{}_{}".format(0, j, o)](x)
 
         # Other edges
-        outputs_clone = outputs.clone()
         for i in range(1, self.n_cells):
-            tmp = outputs_clone[:i, i].reshape(-1, batch_size, self.hidden_size)
+            tmp = outputs[:i, i].clone().reshape(-1, batch_size, self.hidden_size)
             tmp = tmp * z[:i, i, :-1].reshape(-1, 1, 1)
             tmp_sum = torch.sum(tmp, dim=0)
             inputs[i] = tmp_sum
@@ -186,14 +190,18 @@ class NASActor(RLNN):
 
         # Output edges
         result = inputs[-1]
-        for i in range(self.n_cells - 1):
-            result = result + inputs[i] * torch.prod(z[i, (i + 1):, -1])
+        # for i in range(self.n_cells - 1):
+        #     result = result + inputs[i] * torch.prod(z[i, (i + 1):, -1])
         result = self.max_output * torch.tanh(self.out(result))
 
         return result
 
     def reduce_temp(self, rate):
         self.tau = rate * self.tau + (1 - self.tau) * 1e-5
+
+    def normalize_alpha(self):
+        with torch.no_grad():
+            self.log_alphas -= torch.log(torch.sum(torch.exp(self.log_alphas), dim=2, keepdim=True))
 
 
 class GaussianActor(RLNN):
@@ -236,6 +244,28 @@ class GaussianActor(RLNN):
             noise = FloatTensor(self.action_dim).fill_(0)
 
         return mu + noise * s ** 2, mu, s
+
+
+class FoundActor(RLNN):
+
+    def __init__(self, state_dim, action_dim, max_action, args):
+        super(FoundActor, self).__init__(state_dim, action_dim, max_action)
+
+        self.l12 = nn.Linear(state_dim, 400)
+        self.l13 = nn.Linear(state_dim, 400)
+        self.lout = nn.Linear(400, action_dim)
+
+        self.max_action = max_action
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+
+    def forward(self, x):
+
+        x2 = torch.tanh(self.l12(x))
+        x3 = torch.tanh(self.l13(x))
+        out = self.max_action * torch.tanh(self.lout(x2 + x3))
+
+        return out
 
 
 class Actor(RLNN):

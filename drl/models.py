@@ -159,13 +159,10 @@ class NASActor(RLNN):
         batch_size = x.shape[0]
 
         # Sampling stuff
-        eps = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).uniform_()
-        eps = -torch.log(-torch.log(eps))
-        z = torch.exp((self.log_alphas + eps) / self.tau)
+        self.sample()
+        z = torch.exp((self.log_alphas + self.eps) / self.tau)
         z = z / torch.sum(z, dim=2, keepdim=True)
 
-        # if self.cpt % 1000 == 0:
-        #     print("Z", z)
         self.cpt += 1
 
         # Forward pass
@@ -195,6 +192,10 @@ class NASActor(RLNN):
         result = self.max_output * torch.tanh(self.out(result))
 
         return result
+
+    def sample(self):
+        self.eps = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).uniform_()
+        self.eps = -torch.log(-torch.log(self.eps))
 
     def reduce_temp(self, rate):
         self.tau = rate * self.tau + (1 - self.tau) * 1e-5
@@ -253,17 +254,18 @@ class FoundActor(RLNN):
 
         self.l12 = nn.Linear(state_dim, 400)
         self.l13 = nn.Linear(state_dim, 400)
+        self.l23 = nn.Linear(400, 400)
         self.lout = nn.Linear(400, action_dim)
 
         self.max_action = max_action
         self.state_dim = state_dim
         self.action_dim = action_dim
 
-    def forward(self, x):
+    def forward(self, x1):
 
-        x2 = torch.tanh(self.l12(x))
-        x3 = torch.tanh(self.l13(x))
-        out = self.max_action * torch.tanh(self.lout(x2 + x3))
+        x2 = F.relu(self.l12(x1))
+        x3 = torch.tanh(self.l13(x1)) + F.leaky_relu(self.l23(x2))
+        out = self.max_action * torch.tanh(self.lout(x3))
 
         return out
 

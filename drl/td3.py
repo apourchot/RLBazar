@@ -68,7 +68,7 @@ class TD3(object):
         """
         Trains the model for n_iter steps
         """
-
+        critic_losses = []
         for it in range(n_iter):
 
             # Sample replay buffer
@@ -95,6 +95,7 @@ class TD3(object):
             # Compute critic loss
             critic_loss = nn.MSELoss()(current_q1, target_q) + \
                 nn.MSELoss()(current_q2, target_q)
+            critic_losses.append(critic_loss.data.cpu().numpy())
 
             # Optimize the critic
             self.critic_opt.zero_grad()
@@ -121,6 +122,8 @@ class TD3(object):
             for param, target_param in zip(self.critic.parameters(), self.critic_t.parameters()):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
+
+            return np.mean(critic_losses)
 
     def save(self, directory):
         """
@@ -193,7 +196,7 @@ class NASTD3(object):
         """
         Trains the model for n_iter steps
         """
-
+        critic_losses = []
         for it in range(n_iter):
 
             # Sample replay buffer
@@ -217,6 +220,7 @@ class NASTD3(object):
             # Compute critic loss
             critic_loss = nn.MSELoss()(current_q1, target_q) + \
                 nn.MSELoss()(current_q2, target_q)
+            critic_losses.append(critic_loss.data.cpu().numpy())
 
             # Optimize the critic
             self.critic_opt.zero_grad()
@@ -243,6 +247,8 @@ class NASTD3(object):
             for param, target_param in zip(self.critic.parameters(), self.critic_t.parameters()):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
+
+            return np.mean(critic_losses)
 
         self.actor.normalize_alpha()
         # self.actor.reduce_temp(0.999)

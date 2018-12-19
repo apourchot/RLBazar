@@ -100,11 +100,18 @@ class Memory():
         """
         Loads the content of the replay buffer from the given folder
         """
-        self.states = torch.load(input_dir + "/buffer/states.pkl")
-        self.actions = torch.load(input_dir + "/buffer/actions.pkl")
-        self.rewards = torch.load(input_dir + "/buffer/rewards.pkl")
-        self.dones = torch.load(input_dir + "/buffer/dones.pkl")
-        self.stops = torch.load(input_dir + "/buffer/stops.pkl")
+        self.states = torch.load(input_dir + "/states.pkl")
+        self.actions = torch.load(input_dir + "/actions.pkl")
+        self.rewards = torch.load(input_dir + "/rewards.pkl")
+        self.dones = torch.load(input_dir + "/dones.pkl")
+        self.stops = torch.load(input_dir + "/stops.pkl")
+
+        if USE_CUDA:
+            self.states = self.states.cuda()
+            self.actions = self.actions.cuda()
+            self.rewards = self.rewards.cuda()
+            self.dones = self.dones.cuda()
+            self.stops = self.stops.cuda()
 
     def save(self, output_dir):
         """

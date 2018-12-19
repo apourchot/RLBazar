@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from drl.models import FoundActor as Actor, NASActor, CriticTD3 as Critic
+from drl.models import Actor, NASActor, CriticTD3 as Critic
 
 
 USE_CUDA = torch.cuda.is_available()
@@ -69,6 +69,7 @@ class TD3(object):
         Trains the model for n_iter steps
         """
         critic_losses = []
+        actor_losses = []
         for it in range(n_iter):
 
             # Sample replay buffer
@@ -107,6 +108,7 @@ class TD3(object):
 
                 # Compute actor loss
                 actor_loss = -self.critic(states, self.actor(states))[0].mean()
+                actor_losses.append(actor_loss.data.cpu().numpy())
 
                 # Optimize the actor
                 self.actor_opt.zero_grad()
@@ -123,7 +125,7 @@ class TD3(object):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
 
-            return np.mean(critic_losses)
+        return np.mean(critic_losses), np.mean(actor_losses)
 
     def save(self, directory):
         """
@@ -197,6 +199,7 @@ class NASTD3(object):
         Trains the model for n_iter steps
         """
         critic_losses = []
+        actor_losses = []
         for it in range(n_iter):
 
             # Sample replay buffer
@@ -232,6 +235,7 @@ class NASTD3(object):
 
                 # Compute actor loss
                 actor_loss = -self.critic(states, self.actor(states))[0].mean()
+                actor_losses.append(actor_loss.data.cpu().numpy())
 
                 # Optimize the actor
                 self.actor_opt.zero_grad()
@@ -248,12 +252,10 @@ class NASTD3(object):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
 
-            return np.mean(critic_losses)
+        # self.actor.normalize_alpha()
+        # self.actor_t.normalize_alpha()
 
-        self.actor.normalize_alpha()
-        # self.actor.reduce_temp(0.999)
-        self.actor_t.normalize_alpha()
-        # self.actor_t.reduce_temp(0.999)
+        return np.mean(critic_losses), np.mean(actor_losses)
 
     def save(self, directory):
         """

@@ -36,13 +36,13 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, args)
 
     # Algorithm
-    drla = TD3(state_dim, action_dim, max_action, args)
+    drla = NASTD3(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
 
     # Logger
-    fields = ["eval_score", "critic_loss", "total_steps"]
+    fields = ["eval_score", "critic_loss", "actor_loss", "total_steps"]
     logger = Logger(args.output, fields)
 
     # Train
@@ -57,20 +57,17 @@ if __name__ == "__main__":
 
             fitness, steps = evaluate(
                 drla, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps, render=args.render)
-            loss = drla.train(memory, steps)
+            c_loss , a_loss = drla.train(memory, steps)
 
             actor_steps += steps
             total_steps += steps
 
-            # print(torch.exp(drla.actor.log_alphas))
-            # print(drla.actor.tau)
-
             prLightPurple(
-                "Iteration {}; Noisy Actor fitness:{}".format(ite, fitness))
+                "Iteration {}; Noisy Actor fitness:{}; Q-Loss:{}; A-Loss:{}".format(ite, fitness, c_loss, a_loss))
 
         fitness, steps = evaluate(
             drla, env, memory=None, noise=None, n_episodes=10)
-        logger.append([fitness, loss, total_steps])
+        logger.append([fitness, c_loss, a_loss, total_steps])
         print("---------------------------------")
         prRed("Total steps: {}; Actor fitness:{} \n".format(
             total_steps, fitness))

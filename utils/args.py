@@ -23,6 +23,7 @@ parser.add_argument('--n_steps', default=1, type=int)
 # NAS parameters
 parser.add_argument('--n_cells', default=2, type=int)
 parser.add_argument('--hidden_size', default=400, type=int)
+parser.add_argument('--n_ops', default=5, type=int)
 
 # Virel parameters
 parser.add_argument('--alpha', default=5, type=int)

@@ -5,6 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import numpy as np
+import itertools
+
+from utils.optimizers import Adam, BasicSGD
 from utils.utils import to_numpy
 
 USE_CUDA = torch.cuda.is_available()
@@ -13,6 +16,10 @@ if USE_CUDA:
 else:
     FloatTensor = torch.FloatTensor
 
+
+class NullOp(nn.Module):
+    def forward(self, input):
+        return torch.zeros_like(input)
 
 class RLNN(nn.Module):
 
@@ -117,6 +124,145 @@ class RLNN(nn.Module):
         )
 
 
+class MultiCriticTD3(RLNN):
+    def __init__(self, state_dim, action_dim, max_action, args):
+        super(MultiCriticTD3, self).__init__(state_dim, action_dim, 1)
+
+        # Q1 architecture
+        self.l1 = nn.Linear(state_dim + action_dim, 400)
+        self.l2 = nn.Linear(400, 300)
+        self.l3_list = nn.ModuleDict()
+
+        # Q2 architecture
+        self.l4 = nn.Linear(state_dim + action_dim, 400)
+        self.l5 = nn.Linear(400, 300)
+        self.l6_list = nn.ModuleDict()
+
+        # Filling Module Dicts
+        for ops in itertools.product(range(args.n_ops), repeat=args.n_cells):
+            key = "_".join(str(ops)[1:-1].replace(" ", "").split(','))
+            self.l3_list[key] = nn.Linear(300, 1)
+            self.l6_list[key] = nn.Linear(300, 1)
+
+        self.layer_norm = args.layer_norm
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.max_action = max_action
+
+    def forward(self, x, u, key):
+
+        x = torch.cat([x, u], 1)
+
+        x1 = F.leaky_relu(self.l1(x))
+        x1 = F.leaky_relu(self.l2(x1))
+        x1 = self.l3_list[key](x1)
+
+        x2 = F.leaky_relu(self.l4(x))
+        x2 = F.leaky_relu(self.l5(x2))
+        x2 = self.l6_list[key](x2)
+
+        return x1, x2
+
+class MetaActor(RLNN):
+
+    def __init__(self, input_dim, output_dim, max_output, args):
+        super(MetaActor, self).__init__(input_dim, output_dim, max_output)
+
+        # Misc
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.max_output = max_output
+
+        # Hyper parameters
+        self.hidden_size = args.hidden_size
+        self.n_cells = args.n_cells
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()] # , NullOp()]
+        self.n_ops = len(self.ops)
+
+        # Sampling params
+        self.log_alphas = np.zeros((self.n_cells - 1, self.n_cells, self.n_ops))
+        self.normalize_alpha()
+        self.alphas_opt = BasicSGD(1e-3)
+
+        # Layers
+        self.fc_list = nn.ModuleDict()
+        for i in range(self.n_cells - 1):
+            for j in range(self.n_cells):
+
+                input_ = self.hidden_size
+                output = self.hidden_size
+
+                if i == 0:
+                    input_ = self.input_dim
+
+                for o in range(self.n_ops):
+                    self.fc_list["{}_{}_{}".format(i, j, o)] = nn.Sequential(nn.Linear(input_, output), self.ops[o])
+
+        self.out = nn.Linear(self.hidden_size, self.output_dim)
+
+    def forward(self, x, ops_mat):
+
+        batch_size = x.shape[0]
+
+        # Forward pass
+        inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
+        outputs = FloatTensor(self.n_cells - 1, self.n_cells, batch_size, self.hidden_size).fill_(0)
+
+        # Edges starting from first node
+        for j in range(1, self.n_cells):
+            outputs[0, j] = self.fc_list["{}_{}_{}".format(0, j, ops_mat[0, j])](x)
+
+        # Other edges
+        for i in range(1, self.n_cells):
+            tmp = outputs[:i, i].clone().reshape(-1, batch_size, self.hidden_size)
+            tmp_sum = torch.sum(tmp, dim=0)
+            inputs[i] = tmp_sum
+
+            for j in range(i + 1, self.n_cells):
+                outputs[i, j] = self.fc_list["{}_{}_{}".format(i, j, ops_mat[i, j])](tmp_sum)
+
+        # Output edges
+        result = inputs[-1]
+        result = self.max_output * torch.tanh(self.out(result))
+
+        return result
+
+    def sample_ops(self):
+        """
+        Sample the current architecture
+        """
+        ops_mat = np.zeros((self.n_cells - 1, self.n_cells), dtype=int)
+
+        # Sampling operation at each edge
+        for i in range(self.n_cells - 1):
+            for j in range(i + 1, self.n_cells):
+                ops_mat[i, j] = np.random.choice(self.n_ops, p=np.exp(self.log_alphas[i][j]))
+
+        return ops_mat
+
+    def update_dist(self, fitness, ops_mats):
+        """
+        Update the distribution with Adam
+        """
+        grad = np.zeros((self.n_cells - 1, self.n_cells, self.n_ops))
+        for n in range(len(fitness)):
+            for i in range(self.n_cells - 1):
+                for j in range(i + 1, self.n_cells):
+                    grad[i, j, ops_mats[n][i, j]] += fitness[n]
+        grad = grad / len(fitness)
+
+        step = self.alphas_opt.step(grad.reshape(-1,))
+        self.log_alphas = self.log_alphas + step.reshape(self.log_alphas.shape)
+        self.normalize_alpha()
+        print(np.exp(self.log_alphas))
+
+    def normalize_alpha(self):
+        """
+        Transforms log_alphas into log_probabilities
+        """
+        self.log_alphas -= np.log(np.sum(np.exp(self.log_alphas), axis=2, keepdims=True))
+
+
 class NASActor(RLNN):
 
     def __init__(self, input_dim, output_dim, max_output, args):
@@ -130,8 +276,8 @@ class NASActor(RLNN):
         # hyper-parameters
         self.hidden_size = args.hidden_size
         self.n_cells = args.n_cells
-        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()]
-        self.n_ops = len(self.ops) + 1
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU(), NullOp()]
+        self.n_ops = len(self.ops)
 
         # Layers
         self.fc_list = nn.ModuleDict()
@@ -144,7 +290,7 @@ class NASActor(RLNN):
                 if i == 0:
                     input = self.input_dim
 
-                for o in range(self.n_ops - 1):
+                for o in range(self.n_ops):
                     self.fc_list["{}_{}_{}".format(i, j, o)] = nn.Sequential(nn.Linear(input, output), self.ops[o])
 
         self.out = nn.Linear(self.hidden_size, self.output_dim)
@@ -167,22 +313,22 @@ class NASActor(RLNN):
 
         # Forward pass
         inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
-        outputs = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops - 1, batch_size, self.hidden_size).fill_(0)
+        outputs = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops, batch_size, self.hidden_size).fill_(0)
 
         # Edges starting from first node
         for j in range(1, self.n_cells):
-            for o in range(self.n_ops - 1):
+            for o in range(self.n_ops):
                 outputs[0, j, o] = self.fc_list["{}_{}_{}".format(0, j, o)](x)
 
         # Other edges
         for i in range(1, self.n_cells):
             tmp = outputs[:i, i].clone().reshape(-1, batch_size, self.hidden_size)
-            tmp = tmp * z[:i, i, :-1].reshape(-1, 1, 1)
+            tmp = tmp * z[:i, i].reshape(-1, 1, 1)
             tmp_sum = torch.sum(tmp, dim=0)
             inputs[i] = tmp_sum
 
             for j in range(i + 1, self.n_cells):
-                for o in range(self.n_ops - 1):
+                for o in range(self.n_ops):
                     outputs[i, j, o] = self.fc_list["{}_{}_{}".format(i, j, o)](tmp_sum)
 
         # Output edges

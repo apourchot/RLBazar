@@ -90,6 +90,86 @@ def evaluate(actor, env, memory=None, n_steps=1, n_episodes=1, random=False, noi
 
     return np.mean(scores), total_steps
 
+
+def evaluate_nasrl(actor, ops_mat, env, memory=None, n_steps=1, n_episodes=1, random=False, noise=None, render=False, max_action=1):
+    """
+    Computes the score of an actor on a given number of runs,
+    fills the memory if needed
+    """
+
+    if not random:
+        def policy(state):
+            action = actor.action(state, ops_mat)
+
+            if noise is not None:
+                action += noise.sample()
+
+            return np.clip(action, -max_action, max_action)
+
+    else:
+        def policy(state):
+            return env.action_space.sample()
+
+    scores = []
+    total_steps = 0
+
+    for _ in range(n_episodes):
+
+        states = []
+        actions = []
+        rewards = []
+        dones = []
+        stops = []
+
+        score = 0
+        steps = 0
+        done = False
+        obs = deepcopy(env.reset())
+        states.append(obs)
+
+        while not done:
+
+            # get next action and act
+            action = policy(obs)
+            n_obs, reward, done, _ = env.step(action)
+            is_done = 0 if steps + 1 == env._max_episode_steps else float(done)
+            score += reward
+            steps += 1
+
+            # update obs
+            obs = n_obs
+            states.append(obs)
+            actions.append(action)
+            rewards.append(reward)
+            dones.append(done)
+            stops.append(is_done)
+
+            # render if needed
+            if render:
+                env.render()
+
+            # reset when done
+            if done:
+                env.reset()
+
+        # store everything into memory if needed
+        if memory is not None:
+
+            for i in range(steps - n_steps + 1):
+
+                m_states = states[i:i+n_steps+1]
+                m_actions = actions[i:i+n_steps]
+                m_rewards = rewards[i:i+n_steps]
+                m_dones = dones[i:i+n_steps]
+                m_stops = stops[i:i+n_steps]
+
+                memory.add((m_states, m_actions, m_rewards, m_dones, m_stops))
+
+        scores.append(score)
+        total_steps += steps
+
+    return np.mean(scores), total_steps
+
 def prRed(prt):
     print("\033[91m{}\033[00m" .format(prt))
 

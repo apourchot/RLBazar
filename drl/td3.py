@@ -252,8 +252,8 @@ class NASTD3(object):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        # self.actor.normalize_alpha()
-        # self.actor_t.normalize_alpha()
+        self.actor.normalize_alpha()
+        self.actor_t.normalize_alpha()
 
         return np.mean(critic_losses), np.mean(actor_losses)
 

@@ -1,13 +1,14 @@
 import torch
 import gym.spaces
+import numpy as np
 
-from utils.utils import evaluate, get_output_folder, prLightPurple, prRed
+from utils.utils import evaluate_nasrl as evaluate, get_output_folder, prLightPurple, prRed
 from utils.memory import Memory
 from utils.logger import Logger
 from utils.args import parser
 from utils.random_process import GaussianNoise
 
-from drl.td3 import NASTD3
+from drl.nas_rl import NASRL, NASRLv2
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -34,43 +35,63 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, args)
 
     # Algorithm
-    drla = NASTD3(state_dim, action_dim, max_action, args)
+    drla = NASRL(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
 
     # Logger
-    fields = ["eval_score", "critic_loss", "actor_loss", "total_steps"]
+    fields = ["eval_score", "total_steps"]
     logger = Logger(args.output, fields)
 
     # Train
     ite = 0
-    K = 5000
     total_steps = 0
     while total_steps < args.max_steps:
 
         ite += 1
-        actor_steps = 0
-        while actor_steps < K:
 
-            fitness, steps = evaluate(
-                drla, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps, render=args.render)
-            c_loss , a_loss = drla.train(memory, steps)
+        fitness = []
+        c_losses = []
+        a_losses = []
+        pop = drla.sample_pop(args.pop_size)
+
+        # Update actors and critic
+        if total_steps >= args.start_steps:
+            for i in range(args.pop_size):
+                c_loss, a_loss = drla.train(memory, 5000, pop[i])
+                c_losses.append(c_loss)
+                a_losses.append(a_loss)
+
+        # Evaluate actors
+        actor_steps = 0
+        for i in range(args.pop_size):
+            score, steps = evaluate(
+                drla, pop[i], env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps,
+                render=args.render)
+            fitness.append(score)
 
             actor_steps += steps
             total_steps += steps
 
             prLightPurple(
-                "Iteration {}; Noisy Actor fitness:{}; Q-Loss:{}; A-Loss:{}".format(ite, fitness, c_loss, a_loss))
+                "Iteration {}; Noisy Actor fitness:{}".format(ite, score))
+            print(pop[i])
 
-        fitness, steps = evaluate(
-            drla, env, memory=None, noise=None, n_episodes=10)
-        logger.append([fitness, c_loss, a_loss, total_steps])
+        # Update distribution parameters
+        if total_steps >= args.start_steps:
+            drla.update_dist(fitness, pop)
+
+        # Log scores
+        score, _ = evaluate(
+            drla, None, env, memory=None, noise=None, n_episodes=10)
+        logger.append([score, total_steps])
         print("---------------------------------")
         prRed("Total steps: {}; Actor fitness:{} \n".format(
-            total_steps, fitness))
+            total_steps, score))
         drla.save(args.output)
 
+        # Save models
         if args.save_all_models and total_steps % 100000 == 0:
             drla.actor.save_model(args.output, "actor_{}".format(total_steps))
             drla.critic.save_model(args.output, "critic_{}".format(total_steps))

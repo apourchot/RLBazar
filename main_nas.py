@@ -8,7 +8,7 @@ from utils.logger import Logger
 from utils.args import parser
 from utils.random_process import GaussianNoise
 
-from drl.nas_rl import NASRL, NASRLv2
+from drl.nas_rl import NASRL, NASRLv2, NASRLv3
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -35,13 +35,13 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, args)
 
     # Algorithm
-    drla = NASRL(state_dim, action_dim, max_action, args)
+    drla = NASRLv3(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
 
     # Logger
-    fields = ["eval_score", "total_steps"]
+    fields = ["eval_score", "total_steps", "train_scores", "sampled_archi", "log_alphas"]
     logger = Logger(args.output, fields)
 
     # Train
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         # Update actors and critic
         if total_steps >= args.start_steps:
             for i in range(args.pop_size):
-                c_loss, a_loss = drla.train(memory, 5000, pop[i])
+                c_loss, a_loss = drla.train(memory, 1000, pop[i])
                 c_losses.append(c_loss)
                 a_losses.append(a_loss)
 
@@ -85,7 +85,8 @@ if __name__ == "__main__":
         # Log scores
         score, _ = evaluate(
             drla, None, env, memory=None, noise=None, n_episodes=10)
-        logger.append([score, total_steps])
+        # "eval_score", "total_steps", "train_scores", "sampled_archi", "log_alphas"
+        logger.append([score, total_steps, fitness, pop, drla.actor.log_alphas])
         print("---------------------------------")
         prRed("Total steps: {}; Actor fitness:{} \n".format(
             total_steps, score))

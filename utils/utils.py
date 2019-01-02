@@ -205,6 +205,31 @@ def to_numpy(var):
     return var.cpu().data.numpy() if USE_CUDA else var.data.numpy()
 
 
+def to_base_10(s, base):
+    """
+    Converts number represented in the given base to int in base 10
+    """
+    sum = 0
+    pow = 1
+
+    for n in s[::-1]:
+        sum += int(n) * pow
+        pow *= base
+
+    return sum
+
+
+def to_base_n(x, base, len):
+    """
+    Returns array representing x in the given base, with the fixed length
+    """
+    padding = len - int(np.log(x) / np.log(base)) - 1 if x > 0 else len
+    tmp = np.base_repr(x, base=base, padding=padding)
+    tmp = np.array([int(u) for u in tmp])
+
+    return tmp
+
+
 def to_tensor(x, dtype="float"):
     """
     Numpy array to tensor

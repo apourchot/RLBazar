@@ -8,7 +8,7 @@ import numpy as np
 import itertools
 
 from utils.optimizers import Adam, BasicSGD
-from utils.utils import to_numpy
+from utils.utils import to_numpy, to_base_10, to_base_n
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -20,6 +20,7 @@ else:
 class NullOp(nn.Module):
     def forward(self, input):
         return torch.zeros_like(input)
+
 
 class RLNN(nn.Module):
 
@@ -43,28 +44,6 @@ class RLNN(nn.Module):
             else:
                 param.data.copy_(torch.from_numpy(
                     params[cpt:cpt + tmp]).view(param.size()))
-            cpt += tmp
-
-    def add(self, x):
-        """
-        Add x to params
-        """
-        cpt = 0
-        for param in self.parameters():
-            tmp = np.product(param.size())
-            print("param", param, param.shape)
-            print("x", x[cpt:cpt+tmp], x[cpt:cpt+tmp].shape)
-            param = param + x[cpt:cpt+tmp]
-            cpt += tmp
-
-    def multiply(self, x):
-        """
-        Multiply params by x
-        """
-        cpt = 0
-        for param in self.parameters():
-            tmp = np.product(param.size())
-            param = param * FloatTensor(x[cpt:cpt+tmp]).view(param.size())
             cpt += tmp
 
     def get_params(self):
@@ -163,6 +142,7 @@ class MultiCriticTD3(RLNN):
 
         return x1, x2
 
+
 class MetaActor(RLNN):
 
     def __init__(self, input_dim, output_dim, max_output, args):
@@ -182,7 +162,7 @@ class MetaActor(RLNN):
         # Sampling params
         self.log_alphas = np.zeros((self.n_cells - 1, self.n_cells, self.n_ops))
         self.normalize_alpha()
-        self.alphas_opt = BasicSGD(1e-3)
+        self.alphas_opt = BasicSGD(args.distrib_lr)
 
         # Layers
         self.fc_list = nn.ModuleDict()
@@ -244,6 +224,8 @@ class MetaActor(RLNN):
         """
         Update the distribution with Adam
         """
+
+        # computing gradient
         grad = np.zeros((self.n_cells - 1, self.n_cells, self.n_ops))
         for n in range(len(fitness)):
             for i in range(self.n_cells - 1):
@@ -251,8 +233,9 @@ class MetaActor(RLNN):
                     grad[i, j, ops_mats[n][i, j]] += fitness[n]
         grad = grad / len(fitness)
 
+        # update distribution
         step = self.alphas_opt.step(grad.reshape(-1,))
-        self.log_alphas = self.log_alphas + step.reshape(self.log_alphas.shape)
+        self.log_alphas = self.log_alphas - step.reshape(self.log_alphas.shape)
         self.normalize_alpha()
         print(np.exp(self.log_alphas))
 
@@ -261,6 +244,227 @@ class MetaActor(RLNN):
         Transforms log_alphas into log_probabilities
         """
         self.log_alphas -= np.log(np.sum(np.exp(self.log_alphas), axis=2, keepdims=True))
+
+
+class MetaActorv2(RLNN):
+
+    def __init__(self, input_dim, output_dim, max_output, args):
+        super(MetaActorv2, self).__init__(input_dim, output_dim, max_output)
+
+        # Misc
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.max_output = max_output
+
+        # Hyper parameters
+        self.hidden_size = args.hidden_size
+        self.n_cells = args.n_cells
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()] # , NullOp()]
+        self.n_ops = len(self.ops)
+
+        # Sampling params
+        self.pop_size = args.pop_size
+        self.log_alphas = np.zeros((self.n_cells - 1, self.n_cells, self.n_ops))
+        self.normalize_alpha()
+        self.alphas_opt = BasicSGD(args.distrib_lr)
+        self.weights = np.array([np.log((self.pop_size + 1) / i) for i in range(1, self.pop_size + 1)])
+
+        # Layers
+        self.fc_list = nn.ModuleDict()
+        for i in range(self.n_cells - 1):
+            for j in range(self.n_cells):
+
+                input_ = self.hidden_size
+                output = self.hidden_size
+
+                if i == 0:
+                    input_ = self.input_dim
+
+                for o in range(self.n_ops):
+                    self.fc_list["{}_{}_{}".format(i, j, o)] = nn.Sequential(nn.Linear(input_, output), self.ops[o])
+
+        self.out = nn.Linear(self.hidden_size, self.output_dim)
+
+    def forward(self, x, ops_mat):
+
+        batch_size = x.shape[0]
+
+        # Forward pass
+        inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
+        outputs = FloatTensor(self.n_cells - 1, self.n_cells, batch_size, self.hidden_size).fill_(0)
+
+        # Edges starting from first node
+        for j in range(1, self.n_cells):
+            outputs[0, j] = self.fc_list["{}_{}_{}".format(0, j, ops_mat[0, j])](x)
+
+        # Other edges
+        for i in range(1, self.n_cells):
+            tmp = outputs[:i, i].clone().reshape(-1, batch_size, self.hidden_size)
+            tmp_sum = torch.sum(tmp, dim=0)
+            inputs[i] = tmp_sum
+
+            for j in range(i + 1, self.n_cells):
+                outputs[i, j] = self.fc_list["{}_{}_{}".format(i, j, ops_mat[i, j])](tmp_sum)
+
+        # Output edges
+        result = inputs[-1]
+        result = self.max_output * torch.tanh(self.out(result))
+
+        return result
+
+    def sample_ops(self):
+        """
+        Sample the current architecture
+        """
+        ops_mat = np.zeros((self.n_cells - 1, self.n_cells), dtype=int)
+
+        # Sampling operation at each edge
+        for i in range(self.n_cells - 1):
+            for j in range(i + 1, self.n_cells):
+                ops_mat[i, j] = np.random.choice(self.n_ops, p=np.exp(self.log_alphas[i][j]))
+
+        return ops_mat
+
+    def update_dist(self, fitness, ops_mats):
+        """
+        Update the distribution with Adam
+        """
+
+        # sorting by fitness
+        arg_sort = np.argsort(fitness)[::-1]
+
+        grad = np.zeros((self.n_cells - 1, self.n_cells, self.n_ops))
+        for n in arg_sort:
+            for i in range(self.n_cells - 1):
+                for j in range(i + 1, self.n_cells):
+                    grad[i, j, ops_mats[n][i, j]] += self.weights[n]
+        grad = grad / len(fitness)
+
+        step = self.alphas_opt.step(grad.reshape(-1,))
+        self.log_alphas = self.log_alphas - step.reshape(self.log_alphas.shape)
+        self.normalize_alpha()
+        print(np.exp(self.log_alphas))
+
+    def normalize_alpha(self):
+        """
+        Transforms log_alphas into log_probabilities
+        """
+        self.log_alphas -= np.log(np.sum(np.exp(self.log_alphas), axis=2, keepdims=True))
+
+
+class MetaActorv3(RLNN):
+
+    def __init__(self, input_dim, output_dim, max_output, args):
+        super(MetaActorv3, self).__init__(input_dim, output_dim, max_output)
+
+        # Misc
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.max_output = max_output
+
+        # Hyper parameters
+        self.hidden_size = args.hidden_size
+        self.n_cells = args.n_cells
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()] # , NullOp()]
+        self.n_ops = len(self.ops)
+        self.n_links = (self.n_cells * (self.n_cells - 1)) // 2
+
+        # Sampling params
+        self.pop_size = args.pop_size
+        self.n_archi = self.n_ops ** self.n_links
+        self.log_alphas = np.zeros(self.n_archi)
+        self.normalize_alpha()
+        self.alphas_opt = BasicSGD(args.distrib_lr)
+        self.weights = np.array([np.log((self.pop_size + 1) / i) for i in range(1, self.pop_size + 1)])
+        print(self.weights)
+
+        # Layers
+        self.fc_list = nn.ModuleDict()
+        for i in range(self.n_cells - 1):
+            for j in range(self.n_cells):
+
+                input_ = self.hidden_size
+                output = self.hidden_size
+
+                if i == 0:
+                    input_ = self.input_dim
+
+                for o in range(self.n_ops):
+                    self.fc_list["{}_{}_{}".format(i, j, o)] = nn.Sequential(nn.Linear(input_, output), self.ops[o])
+
+        self.out = nn.Linear(self.hidden_size, self.output_dim)
+
+    def forward(self, x, ops_mat):
+
+        batch_size = x.shape[0]
+
+        # Forward pass
+        inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
+        outputs = FloatTensor(self.n_cells - 1, self.n_cells, batch_size, self.hidden_size).fill_(0)
+
+        # Edges starting from first node
+        for j in range(1, self.n_cells):
+            outputs[0, j] = self.fc_list["{}_{}_{}".format(0, j, ops_mat[0, j])](x)
+
+        # Other edges
+        for i in range(1, self.n_cells):
+            tmp = outputs[:i, i].clone().reshape(-1, batch_size, self.hidden_size)
+            tmp_sum = torch.sum(tmp, dim=0)
+            inputs[i] = tmp_sum
+
+            for j in range(i + 1, self.n_cells):
+                outputs[i, j] = self.fc_list["{}_{}_{}".format(i, j, ops_mat[i, j])](tmp_sum)
+
+        # Output edges
+        result = inputs[-1]
+        result = self.max_output * torch.tanh(self.out(result))
+
+        return result
+
+    def sample_ops(self):
+        """
+        Sample the current architecture
+        """
+
+        # selecting index
+        ind = np.random.choice(self.n_archi, p=np.exp(self.log_alphas))
+        key = to_base_n(ind, self.n_ops, self.n_links)
+
+        # sampling architecture
+        ops_mat = np.zeros((self.n_cells - 1, self.n_cells), dtype=np.int)
+        ops_mat[np.triu_indices(self.n_cells, k=1)] = key
+
+        return ops_mat
+
+    def update_dist(self, fitness, ops_mats):
+        """
+        Update the distribution
+        """
+
+        # sort by fitness
+        arg_sort = np.argsort(fitness)[::-1]
+
+        # compute gradient
+        grad = np.zeros(self.n_archi)
+        for i in arg_sort:
+            key = str(ops_mats[i][np.triu_indices(self.n_cells, k=1)])[1:-1].split(" ")
+            key = to_base_10(key, self.n_ops)
+            grad[key] += self.weights[i]
+
+        # update distribution
+        step = self.alphas_opt.step(grad.reshape(-1,))
+        print(-step)
+
+        self.log_alphas = self.log_alphas - step.reshape(self.log_alphas.shape)
+        self.normalize_alpha()
+
+        print(np.exp(self.log_alphas))
+
+    def normalize_alpha(self):
+        """
+        Transforms log_alphas into log_probabilities
+        """
+        self.log_alphas -= np.log(np.sum(np.exp(self.log_alphas)))
 
 
 class NASActor(RLNN):

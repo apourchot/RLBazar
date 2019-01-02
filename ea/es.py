@@ -328,7 +328,7 @@ class sepCMAES:
 
     def get_distrib_params(self):
         """
-        Returns the parameters of the distrubtion:
+        Returns the parameters of the distribution:
         the mean and the covariance matrix
         """
         return np.copy(self.mu), np.copy(self.step_size)**2 * np.copy(self.cov)

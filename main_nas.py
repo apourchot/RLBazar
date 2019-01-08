@@ -8,7 +8,7 @@ from utils.logger import Logger
 from utils.args import parser
 from utils.random_process import GaussianNoise
 
-from drl.nas_rl import NASRL, NASRLv2, NASRLv3
+from drl.nas_rl import NASRL, NASRLv2, NASRLv3, NASReptiLe, NASReptiLev2
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, args)
 
     # Algorithm
-    drla = NASRLv3(state_dim, action_dim, max_action, args)
+    drla = NASRL(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)

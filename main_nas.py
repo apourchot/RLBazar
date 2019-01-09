@@ -8,7 +8,7 @@ from utils.logger import Logger
 from utils.args import parser
 from utils.random_process import GaussianNoise
 
-from drl.nas_rl import NASRL, NASRLv2, NASRLv3, NASReptiLe, NASReptiLev2
+from drl.nas_rl import NASRL, NASRLv2, NASRLv3, NASReptiLe, NASReptiLev2, NASRLMAB
 
 USE_CUDA = torch.cuda.is_available()
 if USE_CUDA:
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     memory = Memory(args.mem_size, state_dim, action_dim, args)
 
     # Algorithm
-    drla = NASRL(state_dim, action_dim, max_action, args)
+    drla = NASReptiLe(state_dim, action_dim, max_action, args)
 
     # Action noise
     a_noise = GaussianNoise(action_dim, sigma=args.gauss_sigma)
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         # Update actors and critic
         if total_steps >= args.start_steps:
             for i in range(args.pop_size):
-                c_loss, a_loss = drla.train(memory, 1000, pop[i])
+                c_loss, a_loss = drla.train(memory, actor_steps // args.pop_size, pop[i])
                 c_losses.append(c_loss)
                 a_losses.append(a_loss)
 

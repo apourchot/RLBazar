@@ -7,6 +7,8 @@ import torch.nn.functional as F
 import numpy as np
 import itertools
 
+from mab.mab import UCB
+
 from utils.optimizers import Adam, BasicSGD
 from utils.utils import to_numpy, to_base_10, to_base_n
 
@@ -465,6 +467,107 @@ class MetaActorv3(RLNN):
         Transforms log_alphas into log_probabilities
         """
         self.log_alphas -= np.log(np.sum(np.exp(self.log_alphas)))
+
+
+class MetaActorMAB(RLNN):
+
+    def __init__(self, input_dim, output_dim, max_output, args):
+        super(MetaActorMAB, self).__init__(input_dim, output_dim, max_output)
+
+        # Misc
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.max_output = max_output
+
+        # Hyper parameters
+        self.hidden_size = args.hidden_size
+        self.n_cells = args.n_cells
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU()] # , NullOp()]
+        self.n_ops = len(self.ops)
+        self.n_links = (self.n_cells * (self.n_cells - 1)) // 2
+
+        # Sampling params
+        self.pop_size = args.pop_size
+        self.ucbs = [UCB(self.n_ops) for _ in range(self.n_links)]
+        self.log_alphas = None
+
+        # Layers
+        self.fc_list = nn.ModuleDict()
+        for i in range(self.n_cells - 1):
+            for j in range(self.n_cells):
+
+                input_ = self.hidden_size
+                output = self.hidden_size
+
+                if i == 0:
+                    input_ = self.input_dim
+
+                for o in range(self.n_ops):
+                    self.fc_list["{}_{}_{}".format(i, j, o)] = nn.Sequential(nn.Linear(input_, output), self.ops[o])
+
+        self.out = nn.Linear(self.hidden_size, self.output_dim)
+
+    def forward(self, x, ops_mat):
+
+        batch_size = x.shape[0]
+
+        # Forward pass
+        inputs = FloatTensor(self.n_cells, batch_size, self.hidden_size).fill_(0)
+        outputs = FloatTensor(self.n_cells - 1, self.n_cells, batch_size, self.hidden_size).fill_(0)
+
+        # Edges starting from first node
+        for j in range(1, self.n_cells):
+            outputs[0, j] = self.fc_list["{}_{}_{}".format(0, j, ops_mat[0, j])](x)
+
+        # Other edges
+        for i in range(1, self.n_cells):
+            tmp = outputs[:i, i].clone().reshape(-1, batch_size, self.hidden_size)
+            tmp_sum = torch.sum(tmp, dim=0)
+            inputs[i] = tmp_sum
+
+            for j in range(i + 1, self.n_cells):
+                outputs[i, j] = self.fc_list["{}_{}_{}".format(i, j, ops_mat[i, j])](tmp_sum)
+
+        # Output edges
+        result = inputs[-1]
+        result = self.max_output * torch.tanh(self.out(result))
+
+        return result
+
+    def sample_ops(self):
+        """
+        Sample the current architecture
+        """
+        ops_mat = np.zeros((self.n_cells - 1, self.n_cells), dtype=int)
+        tmp = 0
+
+        # Sampling operation at each edge
+        for i in range(self.n_cells - 1):
+            for j in range(i + 1, self.n_cells):
+                ops_mat[i, j] = self.ucbs[tmp].sample()
+                tmp += 1
+
+        return ops_mat
+
+    def update_dist(self, fitness, ops_mats):
+        """
+        Update the distribution with Adam
+        """
+        for n in range(self.pop_size):
+            tmp = 0
+            for i in range(self.n_cells - 1):
+                for j in range(i + 1, self.n_cells):
+                    arm = ops_mats[n][i, j]
+                    self.ucbs[tmp].update_arm(arm, fitness[n])
+                    tmp += 1
+
+        tmp = 0
+        for i in range(self.n_cells - 1):
+            for j in range(i + 1, self.n_cells):
+                print(self.ucbs[tmp].means)
+                print(self.ucbs[tmp].compute_confidences())
+                tmp += 1
+
 
 
 class NASActor(RLNN):

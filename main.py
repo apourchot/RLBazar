@@ -47,6 +47,7 @@ if __name__ == "__main__":
     ite = 0
     K = 5000
     total_steps = 0
+    c_loss, a_loss = None, None
     while total_steps < args.max_steps:
 
         ite += 1
@@ -55,7 +56,9 @@ if __name__ == "__main__":
 
             fitness, steps = evaluate(
                 drla, env, memory, noise=a_noise, random=total_steps <= args.start_steps, n_steps=args.n_steps, render=args.render)
-            c_loss , a_loss = drla.train(memory, steps)
+
+            if total_steps > args.start_steps:
+                c_loss, a_loss = drla.train(memory, steps)
 
             actor_steps += steps
             total_steps += steps
@@ -70,6 +73,7 @@ if __name__ == "__main__":
         prRed("Total steps: {}; Actor fitness:{} \n".format(
             total_steps, fitness))
         drla.save(args.output)
+        print(torch.exp(drla.actor.log_alphas))
 
         if args.save_all_models and total_steps % 100000 == 0:
             drla.actor.save_model(args.output, "actor_{}".format(total_steps))

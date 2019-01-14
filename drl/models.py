@@ -583,7 +583,7 @@ class NASActor(RLNN):
         # hyper-parameters
         self.hidden_size = args.hidden_size
         self.n_cells = args.n_cells
-        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.ELU(), torch.nn.modules.LeakyReLU(), NullOp()]
+        self.ops = [torch.nn.modules.Tanh(), torch.nn.modules.ReLU(), torch.nn.modules.SELU(), NullOp()]
         self.n_ops = len(self.ops)
 
         # Layers
@@ -616,6 +616,10 @@ class NASActor(RLNN):
         z = torch.exp((self.log_alphas + self.eps) / self.tau)
         z = z / torch.sum(z, dim=2, keepdim=True)
 
+        if self.cpt % 1000 == 0:
+            print("Z", z)
+            print("Ps", torch.exp(self.log_alphas))
+
         self.cpt += 1
 
         # Forward pass
@@ -647,6 +651,9 @@ class NASActor(RLNN):
         return result
 
     def sample(self):
+        """
+        Gumbel random variable
+        """
         self.eps = FloatTensor(self.n_cells - 1, self.n_cells, self.n_ops).uniform_()
         self.eps = -torch.log(-torch.log(self.eps))
 

@@ -21,8 +21,8 @@ parser.add_argument('--policy_freq', default=2, type=int)
 parser.add_argument('--n_steps', default=1, type=int)
 
 # Meta Learning parameters
-parser.add_argument('--meta_lr', default=0.1, type=float)
-parser.add_argument('--meta_batch', default=5, type=int)
+parser.add_argument('--meta_lr', default=1, type=float)
+parser.add_argument('--meta_batch', default=1, type=int)
 
 # NAS parameters
 parser.add_argument('--n_cells', default=2, type=int)

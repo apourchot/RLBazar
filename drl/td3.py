@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from tqdm import tqdm
+
 from drl.models import Actor, NASActor, CriticTD3 as Critic
 
 
@@ -200,7 +202,7 @@ class NASTD3(object):
         """
         critic_losses = []
         actor_losses = []
-        for it in range(n_iter):
+        for it in tqdm(range(n_iter)):
 
             # Sample replay buffer
             states, actions, n_states, rewards, steps, dones, stops = memory.sample(
@@ -208,10 +210,10 @@ class NASTD3(object):
             rewards = self.reward_scale * rewards * self.weights
             rewards = rewards.sum(dim=1, keepdim=True)
 
-            # Select action according to policy and add clipped noise
+            # Select action according to policy
             n_actions = self.actor_t(n_states)
 
-           # Q target = reward + discount * min_i(Qi(next_state, pi(next_state)))
+            # Q target = reward + discount * min_i(Qi(next_state, pi(next_state)))
             with torch.no_grad():
                 target_q1, target_q2 = self.critic_t(n_states, n_actions)
                 target_q = torch.min(target_q1, target_q2)
@@ -242,6 +244,10 @@ class NASTD3(object):
                 actor_loss.backward()
                 self.actor_opt.step()
 
+                # Normalize alphas
+                self.actor.normalize_alpha()
+                self.actor_t.normalize_alpha()
+
                 # Update the frozen actor models
                 for param, target_param in zip(self.actor.parameters(), self.actor_t.parameters()):
                     target_param.data.copy_(
@@ -251,9 +257,6 @@ class NASTD3(object):
             for param, target_param in zip(self.critic.parameters(), self.critic_t.parameters()):
                 target_param.data.copy_(
                     self.tau * param.data + (1 - self.tau) * target_param.data)
-
-        self.actor.normalize_alpha()
-        self.actor_t.normalize_alpha()
 
         return np.mean(critic_losses), np.mean(actor_losses)
 
